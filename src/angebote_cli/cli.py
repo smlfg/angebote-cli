@@ -18,6 +18,8 @@ from .parser import (
     parse_location,
     parse_offers,
     parse_page_information,
+    parse_search_api_offers,
+    search_api_url,
     search_url,
     slugify_keyword,
 )
@@ -310,6 +312,31 @@ def _make_client(timeout: float | None) -> KaufdaClient:
     return KaufdaClient(timeout=timeout)
 
 
+def _fetch_api_page(
+    client: Any,
+    keyword: str,
+    location: dict[str, Any],
+    offset: int,
+) -> list[Offer]:
+    url = search_api_url(
+        keyword.replace("-", " "),
+        location.get("lat"),
+        location.get("lng"),
+        offset=offset,
+    )
+    try:
+        text = client.get(url)
+    except NotFoundError:
+        return []
+    try:
+        payload = json.loads(text)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    return parse_search_api_offers(payload, keyword)
+
+
 def _search_offers(
     begriff: str, timeout: float | None = None, seiten: int = 3
 ) -> tuple[str, list[Offer], dict[str, Any]]:
@@ -320,24 +347,44 @@ def _search_offers(
     offers: list[Offer] = []
     seen_ids: set[str] = set()
     location: dict[str, Any] = {}
+    use_api = False
     for page in range(1, seiten + 1):
-        try:
-            html = client.get(search_url(keyword, page=page))
-        except NotFoundError:
+        if use_api:
+            page_offers = _fetch_api_page(
+                client, keyword, location, len(offers)
+            )
+        else:
+            try:
+                html = client.get(search_url(keyword, page=page))
+            except NotFoundError:
+                if page == 1:
+                    raise
+                break
+            info = parse_page_information(html)
             if page == 1:
-                raise
-            break
-        info = parse_page_information(html)
-        if page == 1:
-            location = parse_location(info)
-        page_offers = parse_offers(info, keyword)
+                location = parse_location(info)
+            page_offers = parse_offers(info, keyword)
+            if page > 1 and page_offers:
+                new_ids = {
+                    offer.id for offer in page_offers
+                    if offer.id not in seen_ids
+                }
+                if not new_ids:
+                    use_api = True
+                    page_offers = _fetch_api_page(
+                        client, keyword, location, len(offers)
+                    )
         if not page_offers:
             break
+        added = False
         for offer in page_offers:
             if offer.id in seen_ids:
                 continue
             seen_ids.add(offer.id)
             offers.append(offer)
+            added = True
+        if use_api and not added:
+            break
     if not offers:
         raise NotFoundError(
             f"Keine Angebote für „{begriff}“ gefunden. "

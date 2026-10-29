@@ -159,6 +159,49 @@ def test_suche_pagination_finds_offer_on_later_page(
     assert data["angebote"][0]["titel"] == "Lidl Kaffee"
 
 
+def test_suche_pagination_falls_back_to_search_api(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fixture = read_fixture("angebote_butter.html")
+    data = extract_next_data(fixture)
+    api_offer = dict(
+        data["props"]["pageProps"]["pageInformation"]["offers"]["main"]["items"][0]
+    )
+    api_offer["id"] = "api-lidl-kaffee"
+    api_offer["publisherName"] = "Lidl"
+    api_offer["title"] = "Lidl Kaffee"
+
+    class FallbackClient:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        def get(self, url: str) -> str:
+            self.urls.append(url)
+            if "/api/search?" in url:
+                if "offset=20" in url:
+                    offers = [api_offer]
+                else:
+                    offers = []
+                return json.dumps(
+                    {
+                        "searchResults": {
+                            "contents": {"brochures": [], "offers": offers}
+                        }
+                    }
+                )
+            return fixture
+
+    fake = FallbackClient()
+    monkeypatch.setattr(cli, "KaufdaClient", lambda *args, **kwargs: fake)
+    data = run_json(
+        capsys, ["suche", "Kaffee", "--haendler", "lidl", "--json"]
+    )
+
+    assert any("/api/search?" in url for url in fake.urls)
+    assert data["anzahl"] == 1
+    assert data["angebote"][0]["id"] == "api-lidl-kaffee"
+
+
 def test_suche_seiten_limit_is_validated(
     monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:

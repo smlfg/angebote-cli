@@ -8,6 +8,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable
+from urllib.parse import urlencode
 
 from .errors import ParseError
 
@@ -152,6 +153,23 @@ def search_url(
 
 def dealer_url(dealer_slug: str) -> str:
     return f"{BASE_URL}/Geschaefte/{slugify_city(dealer_slug)}"
+
+
+def search_api_url(
+    query: str,
+    lat: Any = None,
+    lng: Any = None,
+    offset: int = 0,
+    limit: int = 24,
+) -> str:
+    params = {
+        "query": query,
+        "lat": str(lat if lat is not None else 0),
+        "lng": str(lng if lng is not None else 0),
+        "offset": str(offset),
+        "limit": str(limit),
+    }
+    return f"{BASE_URL}/api/search?{urlencode(params)}"
 
 
 @dataclass
@@ -381,4 +399,54 @@ def parse_brochures(
                 continue
             seen.add(brochure.id)
             result.append(brochure)
+    return result
+
+def parse_search_api_offers(
+    payload: dict[str, Any],
+    keyword_slug: str | None = None,
+    city_slug: str | None = None,
+) -> list[Offer]:
+    search = payload.get("searchResults")
+    if not isinstance(search, dict):
+        return []
+    contents = search.get("contents")
+    if not isinstance(contents, dict):
+        return []
+
+    validity: dict[str, tuple[Any, Any]] = {}
+    brochures = contents.get("brochures")
+    if isinstance(brochures, list):
+        for entry in brochures:
+            if not isinstance(entry, dict):
+                continue
+            content = entry.get("content")
+            if not isinstance(content, dict):
+                continue
+            pairs = (content.get("validFrom"), content.get("validUntil"))
+            for key in (content.get("contentId"), content.get("id")):
+                if key is not None:
+                    validity[str(key)] = pairs
+
+    result: list[Offer] = []
+    seen_ids: set[str] = set()
+    items = contents.get("offers")
+    if not isinstance(items, list):
+        return result
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        enriched = dict(item)
+        parent = enriched.get("parentContent")
+        if isinstance(parent, dict):
+            found = validity.get(str(parent.get("id")))
+            if found is not None:
+                if not enriched.get("validFrom"):
+                    enriched["validFrom"] = found[0]
+                if not enriched.get("validUntil"):
+                    enriched["validUntil"] = found[1]
+        offer = _offer_from_item(enriched, keyword_slug, city_slug)
+        if offer is None or offer.id in seen_ids:
+            continue
+        seen_ids.add(offer.id)
+        result.append(offer)
     return result
