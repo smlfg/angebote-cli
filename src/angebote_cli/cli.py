@@ -21,6 +21,7 @@ from .parser import (
     search_url,
     slugify_keyword,
 )
+from .state import load_seen, save_seen, state_path
 
 
 class ArgumentParser(argparse.ArgumentParser):
@@ -122,6 +123,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Suchbegriff zum Auffinden des Angebots (erforderlich)",
     )
     angebot.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+
+    watch = subparsers.add_parser(
+        "watch",
+        help="Neue Angebote zu einem Begriff beobachten",
+        description=(
+            "Speichert gesehene Angebots-IDs und meldet nur neue Treffer."
+        ),
+    )
+    watch.add_argument("begriff", help="Suchbegriff, z. B. Butter")
+    watch.add_argument(
+        "--haendler",
+        nargs="+",
+        metavar="NAME",
+        help="Nur Händler, deren Name den Text enthält (mehrere möglich)",
+    )
+    watch.add_argument(
+        "--max-preis",
+        type=_max_price,
+        metavar="EUR",
+        help="Nur Angebote bis zu diesem Preis",
+    )
+    watch.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     return parser
 
 
@@ -198,8 +221,8 @@ def _print_offers(offers: list[Offer], location: dict[str, Any]) -> None:
         )
 
 
-def _run_suche(args: argparse.Namespace) -> int:
-    keyword = slugify_keyword(args.begriff)
+def _search_offers(begriff: str) -> tuple[str, list[Offer], dict[str, Any]]:
+    keyword = slugify_keyword(begriff)
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
     client = KaufdaClient()
@@ -208,9 +231,14 @@ def _run_suche(args: argparse.Namespace) -> int:
     offers = parse_offers(info, keyword)
     if not offers:
         raise NotFoundError(
-            f"Keine Angebote für „{args.begriff}“ gefunden. "
+            f"Keine Angebote für „{begriff}“ gefunden. "
             "Versuch es mit einem allgemeineren Begriff."
         )
+    return keyword, offers, parse_location(info)
+
+
+def _run_suche(args: argparse.Namespace) -> int:
+    keyword, offers, location = _search_offers(args.begriff)
     offers = _filter_offers(
         offers,
         haendler=args.haendler,
@@ -219,7 +247,6 @@ def _run_suche(args: argparse.Namespace) -> int:
         sort=args.sort,
         limit=args.limit,
     )
-    location = parse_location(info)
     if args.json:
         payload = {
             "ok": True,
@@ -321,6 +348,43 @@ def _run_angebot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_watch(args: argparse.Namespace) -> int:
+    path = state_path()
+    seen = load_seen(path)
+    keyword, offers, location = _search_offers(args.begriff)
+    offers = _filter_offers(
+        offers,
+        haendler=args.haendler,
+        max_preis=args.max_preis,
+    )
+    new_offers = [offer for offer in offers if offer.id not in seen]
+    save_seen(path, seen | {offer.id for offer in new_offers})
+    changed = bool(new_offers)
+    if args.json:
+        payload = {
+            "ok": True,
+            "begriff": args.begriff,
+            "keyword": keyword,
+            "location": location,
+            "changed": changed,
+            "anzahl_neu": len(new_offers),
+            "anzahl_gesamt": len(offers),
+            "neu": [offer.to_dict() for offer in new_offers],
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        city = location.get("city")
+        zip_code = location.get("zip")
+        if city:
+            suffix = f" ({zip_code})" if zip_code else ""
+            print(f"Ort: {city}{suffix}")
+        if not new_offers:
+            print("Keine neuen Angebote.")
+        else:
+            _print_offers(new_offers, {})
+    return 0
+
+
 def _emit_error(error: AngeboteError, json_mode: bool) -> int:
     if json_mode:
         payload = {
@@ -348,6 +412,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_prospekte(args)
         if args.command == "angebot":
             return _run_angebot(args)
+        if args.command == "watch":
+            return _run_watch(args)
         parser.print_help()
         return 0
     except AngeboteError as error:

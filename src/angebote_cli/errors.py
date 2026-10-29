@@ -30,3 +30,8 @@ class NotFoundError(AngeboteError):
 class ParseError(AngeboteError):
     exit_code = 4
     error_type = "parse"
+
+
+class StateError(AngeboteError):
+    exit_code = 1
+    error_type = "state"
