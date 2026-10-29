@@ -10,9 +10,11 @@ from . import __version__, client, outputs, parser as kd
 from .errors import (
     EXIT_OK,
     CliError,
+    StateError,
     NotFoundError,
     UsageError,
 )
+from . import watch as watch_mod
 
 # --- Parser ------------------------------------------------------------
 
@@ -83,6 +85,22 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common(p_pros)
     p_pros.add_argument("haendler", help="Haendlername (z.B. REWE, Lidl)")
     p_pros.set_defaults(func=cmd_prospekte)
+
+    p_watch = sub.add_parser(
+        "watch",
+        help="Suchbegriff beobachten; meldet nur neue Treffer (State lokal, 0600)",
+    )
+    _add_common(p_watch)
+    p_watch.add_argument("begriff", help="Suchbegriff")
+    p_watch.add_argument(
+        "--haendler", nargs="+", default=None, metavar="NAME",
+        help="Haendler-Filter (case-insensitive Teilstring), mehrfach moeglich",
+    )
+    p_watch.add_argument(
+        "--max-preis", type=float, default=None, metavar="EUR",
+        help="nur Angebote mit Preis <= EUR melden",
+    )
+    p_watch.set_defaults(func=cmd_watch)
     return ap
 
 
@@ -217,6 +235,52 @@ def cmd_prospekte(args: argparse.Namespace) -> int:
         print(f"Ort: {ort.get('city') or '?'} {ort.get('zip') or ''}".strip())
         for b in bros:
             print(outputs.brochure_line(b))
+    return EXIT_OK
+
+
+def cmd_watch(args: argparse.Namespace) -> int:
+    path = watch_mod.state_path()
+    try:
+        known = watch_mod.load_ids(path)
+    except watch_mod.StateError as exc:
+        raise StateError(str(exc)) from exc
+    slug = kd.slugify(args.begriff)
+    if not slug:
+        raise UsageError(f"Nicht-verwendbarer Suchbegriff: {args.begriff!r}")
+    html = client.fetch_html(f"{kd.BASE_URL}/Angebote/{slug}")
+    pi = kd.extract_page_information(html)
+    hits = kd.parse_offers(pi)
+    ns = argparse.Namespace(
+        haendler=args.haendler, marke=None, max_preis=args.max_preis
+    )
+    hits = _apply_filters(hits, ns)
+    ort = kd.parse_location(pi)
+    neu = []
+    for hit in hits:
+        hid = str(hit.get("id"))
+        if hid and hid not in known:
+            known[hid] = watch_mod.first_seen_now()
+            neu.append(_public_hit(hit))
+    watch_mod.save_ids(path, known)
+    payload = {
+        "ok": True,
+        "changed": bool(neu),
+        "begriff": args.begriff,
+        "ort": ort,
+        "anzahl_neu": len(neu),
+        "anzahl_gesehen": len(known) - len(neu),
+        "neu": neu,
+        "state_datei": str(path),
+    }
+    if args.json:
+        outputs.print_json(payload)
+        return EXIT_OK
+    print(f"Ort: {ort.get('city') or '?'} {ort.get('zip') or ''}".strip())
+    print(
+        f"{'Neue Treffer: ' + str(len(neu)) if neu else 'keine neuen Treffer (changed=false)'}"
+    )
+    for h in neu:
+        print(outputs.hit_line(h))
     return EXIT_OK
 
 

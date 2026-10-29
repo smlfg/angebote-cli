@@ -25,6 +25,11 @@ class UsageError(CliError):
     type = "usage"
 
 
+class StateError(CliError):
+    exit_code = EXIT_USAGE
+    type = "state"
+
+
 class NetworkError(CliError):
     exit_code = EXIT_NETWORK
     type = "network"
