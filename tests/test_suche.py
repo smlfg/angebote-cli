@@ -54,6 +54,42 @@ def test_suche_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     assert isinstance(first["kategorien"], list) and first["kategorien"]
 
 
+def test_suche_relevance_filters_unrelated(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    data = run_json(capsys, ["suche", "Butter", "--json"])
+
+    titles = {offer["titel"] for offer in data["angebote"]}
+    assert data["verworfen_irrelevant"] >= 1
+    assert "3D-Puzzle Vase Organic sage" not in titles
+    assert "Hazelnut Choco" not in titles
+    for offer in data["angebote"]:
+        haystack = cli._normalize_text(
+            " ".join(
+                [
+                    offer["titel"],
+                    offer["beschreibung"] or "",
+                    offer["marke"] or "",
+                    " ".join(offer["kategorien"]),
+                ]
+            )
+        )
+        assert "butter" in haystack
+
+
+def test_suche_locker_keeps_unrelated(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    data = run_json(capsys, ["suche", "Butter", "--locker", "--json"])
+
+    titles = {offer["titel"] for offer in data["angebote"]}
+    assert data["verworfen_irrelevant"] == 0
+    assert "3D-Puzzle Vase Organic sage" in titles
+    assert "Hazelnut Choco" in titles
+
+
 def test_suche_haendler_filter(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     install_client(monkeypatch, read_fixture("angebote_butter.html"))
     data = run_json(capsys, ["suche", "Butter", "--haendler", "rewe", "--json"])

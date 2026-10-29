@@ -133,6 +133,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Dubletten aus regionalen Prospekten nicht zusammenfassen",
     )
+    suche.add_argument(
+        "--locker",
+        action="store_true",
+        help="Relevanzfilter ausschalten (alle kaufDA-Treffer behalten)",
+    )
     suche.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     suche.add_argument(
         "--timeout",
@@ -200,6 +205,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="EUR",
         help="Nur Angebote bis zu diesem Preis",
     )
+    watch.add_argument(
+        "--locker",
+        action="store_true",
+        help="Relevanzfilter ausschalten (alle kaufDA-Treffer behalten)",
+    )
     watch.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     watch.add_argument(
         "--timeout",
@@ -209,6 +219,50 @@ def build_parser() -> argparse.ArgumentParser:
         help="HTTP-Timeout in Sekunden (muss positiv sein)",
     )
     return parser
+
+
+_UMLAUTS = str.maketrans(
+    {
+        "ä": "ae",
+        "ö": "oe",
+        "ü": "ue",
+        "ß": "ss",
+    }
+)
+
+
+def _normalize_text(value: str) -> str:
+    return value.casefold().translate(_UMLAUTS)
+
+
+def _filter_relevant(
+    offers: list[Offer], begriff: str
+) -> tuple[list[Offer], int]:
+    words = [
+        _normalize_text(word)
+        for word in " ".join(begriff.split()).split(" ")
+        if word
+    ]
+    if not words:
+        return list(offers), 0
+    kept: list[Offer] = []
+    dropped = 0
+    for offer in offers:
+        haystack = _normalize_text(
+            " ".join(
+                [
+                    offer.titel,
+                    offer.beschreibung or "",
+                    offer.marke or "",
+                    " ".join(offer.kategorien),
+                ]
+            )
+        )
+        if all(word in haystack for word in words):
+            kept.append(offer)
+        else:
+            dropped += 1
+    return kept, dropped
 
 
 def _filter_offers(
@@ -399,6 +453,9 @@ def _run_suche(args: argparse.Namespace) -> int:
         getattr(args, "timeout", None),
         getattr(args, "seiten", 3),
     )
+    verworfen_irrelevant = 0
+    if not getattr(args, "locker", False):
+        offers, verworfen_irrelevant = _filter_relevant(offers, args.begriff)
     offers = _filter_offers(
         offers,
         haendler=args.haendler,
@@ -417,6 +474,7 @@ def _run_suche(args: argparse.Namespace) -> int:
             "keyword": keyword,
             "location": location,
             "anzahl": len(offers),
+            "verworfen_irrelevant": verworfen_irrelevant,
             "angebote": [offer.to_dict() for offer in offers],
         }
         print(json.dumps(payload, ensure_ascii=False))
@@ -517,6 +575,9 @@ def _run_watch(args: argparse.Namespace) -> int:
     keyword, offers, location = _search_offers(
         args.begriff, getattr(args, "timeout", None)
     )
+    verworfen_irrelevant = 0
+    if not getattr(args, "locker", False):
+        offers, verworfen_irrelevant = _filter_relevant(offers, args.begriff)
     offers = _filter_offers(
         offers,
         haendler=args.haendler,
@@ -534,6 +595,7 @@ def _run_watch(args: argparse.Namespace) -> int:
             "changed": changed,
             "anzahl_neu": len(new_offers),
             "anzahl_gesamt": len(offers),
+            "verworfen_irrelevant": verworfen_irrelevant,
             "neu": [offer.to_dict() for offer in new_offers],
         }
         print(json.dumps(payload, ensure_ascii=False))
