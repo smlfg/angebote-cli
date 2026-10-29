@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "angebote-cli"
+version = "0.1.0"
+description = "CLI für aktuelle Prospekt-Angebote deutscher Händler über kaufDA.de"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "smlfg", email = "186922365+smlfg@users.noreply.github.com" }]
+keywords = ["prospekte", "angebote", "kaufda", "_cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Environment :: Console",
+    "Topic :: Office/Business",
+]
+dependencies = ["httpx>=0.24"]
+
+[project.urls]
+Homepage = "https://github.com/smlfg/angebote-cli"
+Issues = "https://github.com/smlfg/angebote-cli/issues"
+
+[project.scripts]
+angebote = "angebote_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
