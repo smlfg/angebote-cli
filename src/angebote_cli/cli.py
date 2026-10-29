@@ -67,6 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_suche.set_defaults(func=cmd_suche)
 
+    p_ang = sub.add_parser("angebot", help="Details zu einem Angebot per offer-id")
+    _add_common(p_ang)
+    p_ang.add_argument("offer_id", help="Angebots-ID (aus 'suche', z.B. UUID)")
+    p_ang.add_argument(
+        "--begriff",
+        help="Suchbegriff, ueber dessen Suchseite das Angebot gefunden wird "
+        "(Pflicht, da kaufDA keine eigene Angebots-Detailseite hat)",
+    )
+    p_ang.set_defaults(func=cmd_angebot)
+
     p_pros = sub.add_parser(
         "prospekte", help="aktuelle Prospekte eines Haendlers"
     )
@@ -215,13 +225,67 @@ def _public_brochure(b: dict[str, Any]) -> dict[str, Any]:
     return {k: b.get(k) for k in keys}
 
 
+def cmd_angebot(args: argparse.Namespace) -> int:
+    if not args.begriff:
+        raise UsageError(
+            "kaufDA hat keine eigene Angebots-Detailseite; das Angebot wird "
+            "ueber die Suchseite gefunden. Bitte --begriff B angeben "
+            "(z.B. den Begriff, den du bei 'suche' genutzt hast)."
+        )
+    slug = kd.slugify(args.begriff)
+    if not slug:
+        raise UsageError(f"Nicht-verwendbarer Suchbegriff: {args.begriff!r}")
+    html = client.fetch_html(f"{kd.BASE_URL}/Angebote/{slug}")
+    pi = kd.extract_page_information(html)
+    ort = kd.parse_location(pi)
+    angebot = None
+    for hit in kd.parse_offers(pi):
+        if str(hit.get("id")) == str(args.offer_id):
+            angebot = hit
+            break
+    if angebot is None:
+        raise NotFoundError(
+            f"Angebots-ID {args.offer_id} auf der Suchseite fuer "
+            f"{args.begriff!r} nicht gefunden. Angebote wechseln "
+            "woechentlich: nutze den aktuellen Wert aus 'angebote suche' und "
+            "den Begriff, mit dem das Angebot dort gelistet wurde."
+        )
+    public = _public_hit(angebot)
+    public["beschreibung"] = angebot.get("beschreibung")
+    payload = {"ok": True, "ort": ort, "angebot": public}
+    if args.json:
+        outputs.print_json(payload)
+        return EXIT_OK
+    print(f"Ort: {ort.get('city') or '?'} {ort.get('zip') or ''}".strip())
+    prospekt_parts = []
+    if public.get("prospekt_id"):
+        prospekt_parts.append(f"id {public['prospekt_id']}")
+    if public.get("seite"):
+        prospekt_parts.append(f"Seite {public['seite']}")
+    lines = [
+        f"Titel: {public.get('titel')}",
+        f"Beschreibung: {public.get('beschreibung') or '?'}",
+        f"Marke: {public.get('marke') or '?'}",
+        f"Preis: {outputs.fmt_price(public.get('preis'), public.get('preis_text'))}",
+        f"Haendler: {public.get('haendler') or '?'}",
+        f"Gueltig: {outputs.fmt_date(public.get('gueltig_von'))} bis "
+        f"{outputs.fmt_date(public.get('gueltig_bis'))}",
+        f"Prospekt: {', '.join(prospekt_parts) if prospekt_parts else '?'}",
+        f"Bild: {public.get('bild') or '?'}",
+        f"URL: {public.get('url')}",
+    ]
+    for line in lines:
+        print(line)
+    return EXIT_OK
+
+
 def _public_hit(hit: dict[str, Any]) -> dict[str, Any]:
     required = (
         "id", "titel", "marke", "haendler", "preis", "preis_text",
         "grundpreis", "gueltig_von", "gueltig_bis", "prospekt_id",
         "seite", "url",
     )
-    optional = ("statt_preis", "rabatt", "bild")
+    optional = ("statt_preis", "rabatt", "bild", "beschreibung")
     out = {k: hit.get(k) for k in required}
     out.update({k: hit[k] for k in optional if hit.get(k) is not None})
     return out

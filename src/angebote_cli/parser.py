@@ -110,6 +110,7 @@ def offer_to_hit(offer: dict[str, Any], url: str) -> dict[str, Any]:
     return {
         "id": offer.get("id"),
         "titel": offer.get("title"),
+        "beschreibung": offer.get("description") or None,
         "marke": offer.get("brand") or None,
         "haendler": offer.get("publisherName") or None,
         "preis": preis,
