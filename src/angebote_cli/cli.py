@@ -106,6 +106,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prospekte.add_argument("haendler", help="Händlername, z. B. REWE")
     prospekte.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+
+    angebot = subparsers.add_parser(
+        "angebot",
+        help="Details zu einem einzelnen Angebot anzeigen",
+        description=(
+            "Zeigt Details zu einer Angebots-ID. kaufDA hat keine eigene "
+            "Detailseite, daher wird die Suchseite des Begriffs verwendet."
+        ),
+    )
+    angebot.add_argument("offer_id", metavar="OFFER-ID", help="Angebots-ID")
+    angebot.add_argument(
+        "--begriff",
+        metavar="B",
+        help="Suchbegriff zum Auffinden des Angebots (erforderlich)",
+    )
+    angebot.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     return parser
 
 
@@ -254,6 +270,57 @@ def _run_prospekte(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_angebot(args: argparse.Namespace) -> int:
+    if not args.begriff:
+        raise UsageError(
+            "Für „angebot“ wird --begriff benötigt: kaufDA hat keine eigene "
+            "Angebots-Detailseite, daher wird das Angebot über die Suche "
+            "gefunden."
+        )
+    keyword = slugify_keyword(args.begriff)
+    if not keyword:
+        raise UsageError("Der Suchbegriff darf nicht leer sein.")
+    client = KaufdaClient()
+    html = client.get(search_url(keyword))
+    info = parse_page_information(html)
+    offers = parse_offers(info, keyword)
+    offer = next((item for item in offers if item.id == args.offer_id), None)
+    if offer is None:
+        raise NotFoundError(
+            f"Angebot {args.offer_id} wurde bei der Suche nach "
+            f"„{args.begriff}“ nicht gefunden."
+        )
+    location = parse_location(info)
+    if args.json:
+        payload = {
+            "ok": True,
+            "location": location,
+            "angebot": offer.to_dict(detailed=True),
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        city = location.get("city")
+        zip_code = location.get("zip")
+        if city:
+            suffix = f" ({zip_code})" if zip_code else ""
+            print(f"Ort: {city}{suffix}")
+        print(offer.titel)
+        if offer.beschreibung:
+            print(f"Beschreibung: {offer.beschreibung}")
+        print(f"Preis: {offer.preis_text or '—'}")
+        print(f"Marke: {offer.marke or '—'}")
+        print(f"Händler: {offer.haendler}")
+        valid_from = (offer.gueltig_von or "")[:10] or "?"
+        valid_until = (offer.gueltig_bis or "")[:10] or "?"
+        print(f"Gültig: {valid_from} bis {valid_until}")
+        page = offer.seite if offer.seite is not None else "?"
+        print(f"Prospekt: {offer.prospekt_id or '?'} (Seite {page})")
+        if offer.bild_url:
+            print(f"Bild: {offer.bild_url}")
+        print(f"URL: {offer.url}")
+    return 0
+
+
 def _emit_error(error: AngeboteError, json_mode: bool) -> int:
     if json_mode:
         payload = {
@@ -279,6 +346,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_suche(args)
         if args.command == "prospekte":
             return _run_prospekte(args)
+        if args.command == "angebot":
+            return _run_angebot(args)
         parser.print_help()
         return 0
     except AngeboteError as error:
