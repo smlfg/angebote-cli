@@ -66,7 +66,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--limit", type=int, default=None, metavar="N", help="max. Treffer"
     )
     p_suche.set_defaults(func=cmd_suche)
+
+    p_pros = sub.add_parser(
+        "prospekte", help="aktuelle Prospekte eines Haendlers"
+    )
+    _add_common(p_pros)
+    p_pros.add_argument("haendler", help="Haendlername (z.B. REWE, Lidl)")
+    p_pros.set_defaults(func=cmd_prospekte)
     return ap
+
+
+# --- URL-Hilfen --------------------------------------------------------
+
+
+def _haendler_slugs(name: str) -> list[str]:
+    """Kandidaten-Slugs fuer /Geschaefte/<Haendler> (kaufDA ist case-sensitive)."""
+    seen, out = set(), []
+    for cand in (
+        kd.slugify(name),
+        name.strip().replace(" ", "-").upper(),
+        name.strip().replace(" ", "-"),
+    ):
+        if cand and cand not in seen:
+            seen.add(cand)
+            out.append(cand)
+    return out
 
 
 # --- Filter ------------------------------------------------------------
@@ -138,6 +162,57 @@ def cmd_suche(args: argparse.Namespace) -> int:
         for t in treffer:
             print(outputs.hit_line(t))
     return EXIT_OK
+
+
+def cmd_prospekte(args: argparse.Namespace) -> int:
+    name = args.haendler
+    last_error: NotFoundError | None = None
+    html = None
+    slug_used = None
+    for slug in _haendler_slugs(name):
+        url = f"{kd.BASE_URL}/Geschaefte/{slug}"
+        try:
+            html = client.fetch_html(url)
+            slug_used = slug
+            break
+        except NotFoundError as exc:
+            last_error = exc
+            continue
+    if html is None:
+        raise NotFoundError(
+            f"Kein Haendler {name!r} gefunden. Probierte URLs: "
+            + ", ".join(f"/Geschaefte/{s}" for s in _haendler_slugs(name))
+            + f". ({last_error})"
+        )
+    pi = kd.extract_page_information(html)
+    bros = kd.parse_brochures(pi, "publisher")
+    if not bros:
+        bros = kd.parse_brochures(pi, "keyword")
+    if not bros:
+        bros = kd.parse_brochures(pi)
+    bros = [_public_brochure(b) for b in bros]
+    ort = kd.parse_location(pi)
+    page_url = kd.pi_url(pi)
+    payload = {
+        "ok": True,
+        "haendler": name,
+        "url": page_url,
+        "ort": ort,
+        "anzahl": len(bros),
+        "prospekte": bros,
+    }
+    if args.json:
+        outputs.print_json(payload)
+    else:
+        print(f"Ort: {ort.get('city') or '?'} {ort.get('zip') or ''}".strip())
+        for b in bros:
+            print(outputs.brochure_line(b))
+    return EXIT_OK
+
+
+def _public_brochure(b: dict[str, Any]) -> dict[str, Any]:
+    keys = ("id", "titel", "haendler", "content_id", "gueltig_von", "gueltig_bis", "seiten", "url")
+    return {k: b.get(k) for k in keys}
 
 
 def _public_hit(hit: dict[str, Any]) -> dict[str, Any]:
