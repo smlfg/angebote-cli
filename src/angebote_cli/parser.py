@@ -97,12 +97,22 @@ def offer_to_hit(offer: dict[str, Any], url: str) -> dict[str, Any]:
     pc = offer.get("parentContent") or {}
     page = (pc.get("page") or {}).get("number")
     urls = (offer.get("offerImages") or {}).get("url") or {}
+    preis = _price_from_offer(offer)
+    prices = offer.get("prices") or {}
+    statt = prices.get("secondaryPrice")
+    if not isinstance(statt, (int, float)) or not statt:
+        statt = None
+    else:
+        statt = float(statt)
+    rabatt = None
+    if preis is not None and statt is not None and statt > preis:
+        rabatt = round(statt - preis, 2)
     return {
         "id": offer.get("id"),
         "titel": offer.get("title"),
         "marke": offer.get("brand") or None,
         "haendler": offer.get("publisherName") or None,
-        "preis": _price_from_offer(offer),
+        "preis": preis,
         "preis_text": preis_text(offer),
         "grundpreis": (offer.get("prices") or {}).get("priceByBaseUnit") or None,
         "gueltig_von": normalize_iso(offer.get("validFrom")),
@@ -110,6 +120,8 @@ def offer_to_hit(offer: dict[str, Any], url: str) -> dict[str, Any]:
         "prospekt_id": pc.get("id"),
         "seite": page,
         "url": url,
+        "statt_preis": statt,
+        "rabatt": rabatt,
         "bild": urls.get("normal") or urls.get("large") or None,
     }
 
