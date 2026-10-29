@@ -46,6 +46,13 @@ def _max_price(value: str) -> float:
     return number
 
 
+def _timeout(value: str) -> float:
+    number = _finite_float(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("--timeout muss positiv sein")
+    return number
+
+
 def _positive_int(value: str) -> int:
     try:
         number = int(value)
@@ -65,6 +72,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         action="version",
         version=f"angebote {__version__}",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=_timeout,
+        default=argparse.SUPPRESS,
+        metavar="SEC",
+        help="HTTP-Timeout in Sekunden (muss positiv sein)",
     )
     subparsers = parser.add_subparsers(dest="command")
 
@@ -99,6 +113,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximale Anzahl Treffer",
     )
     suche.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+    suche.add_argument(
+        "--timeout",
+        type=_timeout,
+        default=argparse.SUPPRESS,
+        metavar="SEC",
+        help="HTTP-Timeout in Sekunden (muss positiv sein)",
+    )
 
     prospekte = subparsers.add_parser(
         "prospekte",
@@ -107,6 +128,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     prospekte.add_argument("haendler", help="Händlername, z. B. REWE")
     prospekte.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+    prospekte.add_argument(
+        "--timeout",
+        type=_timeout,
+        default=argparse.SUPPRESS,
+        metavar="SEC",
+        help="HTTP-Timeout in Sekunden (muss positiv sein)",
+    )
 
     angebot = subparsers.add_parser(
         "angebot",
@@ -123,6 +151,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Suchbegriff zum Auffinden des Angebots (erforderlich)",
     )
     angebot.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+    angebot.add_argument(
+        "--timeout",
+        type=_timeout,
+        default=argparse.SUPPRESS,
+        metavar="SEC",
+        help="HTTP-Timeout in Sekunden (muss positiv sein)",
+    )
 
     watch = subparsers.add_parser(
         "watch",
@@ -145,6 +180,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Nur Angebote bis zu diesem Preis",
     )
     watch.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+    watch.add_argument(
+        "--timeout",
+        type=_timeout,
+        default=argparse.SUPPRESS,
+        metavar="SEC",
+        help="HTTP-Timeout in Sekunden (muss positiv sein)",
+    )
     return parser
 
 
@@ -221,11 +263,19 @@ def _print_offers(offers: list[Offer], location: dict[str, Any]) -> None:
         )
 
 
-def _search_offers(begriff: str) -> tuple[str, list[Offer], dict[str, Any]]:
+def _make_client(timeout: float | None) -> KaufdaClient:
+    if timeout is None:
+        return KaufdaClient()
+    return KaufdaClient(timeout=timeout)
+
+
+def _search_offers(
+    begriff: str, timeout: float | None = None
+) -> tuple[str, list[Offer], dict[str, Any]]:
     keyword = slugify_keyword(begriff)
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
-    client = KaufdaClient()
+    client = _make_client(timeout)
     html = client.get(search_url(keyword))
     info = parse_page_information(html)
     offers = parse_offers(info, keyword)
@@ -238,7 +288,9 @@ def _search_offers(begriff: str) -> tuple[str, list[Offer], dict[str, Any]]:
 
 
 def _run_suche(args: argparse.Namespace) -> int:
-    keyword, offers, location = _search_offers(args.begriff)
+    keyword, offers, location = _search_offers(
+        args.begriff, getattr(args, "timeout", None)
+    )
     offers = _filter_offers(
         offers,
         haendler=args.haendler,
@@ -263,7 +315,7 @@ def _run_suche(args: argparse.Namespace) -> int:
 
 
 def _run_prospekte(args: argparse.Namespace) -> int:
-    client = KaufdaClient()
+    client = _make_client(getattr(args, "timeout", None))
     html = client.get(dealer_url(args.haendler))
     info = parse_page_information(html)
     brochures = parse_brochures(info, args.haendler)
@@ -307,7 +359,7 @@ def _run_angebot(args: argparse.Namespace) -> int:
     keyword = slugify_keyword(args.begriff)
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
-    client = KaufdaClient()
+    client = _make_client(getattr(args, "timeout", None))
     html = client.get(search_url(keyword))
     info = parse_page_information(html)
     offers = parse_offers(info, keyword)
@@ -351,7 +403,9 @@ def _run_angebot(args: argparse.Namespace) -> int:
 def _run_watch(args: argparse.Namespace) -> int:
     path = state_path()
     seen = load_seen(path)
-    keyword, offers, location = _search_offers(args.begriff)
+    keyword, offers, location = _search_offers(
+        args.begriff, getattr(args, "timeout", None)
+    )
     offers = _filter_offers(
         offers,
         haendler=args.haendler,
