@@ -265,6 +265,11 @@ def _normalize_text(value: str) -> str:
     return value.casefold().translate(_UMLAUTS)
 
 
+def _contains_word(haystack: str, word: str) -> bool:
+    pattern = rf"(?<![0-9a-z]){re.escape(word)}(?![0-9a-z])"
+    return re.search(pattern, haystack) is not None
+
+
 def _filter_relevant(
     offers: list[Offer], begriff: str
 ) -> tuple[list[Offer], int]:
@@ -288,7 +293,7 @@ def _filter_relevant(
                 ]
             )
         )
-        if all(word in haystack for word in words):
+        if all(_contains_word(haystack, word) for word in words):
             kept.append(offer)
         else:
             dropped += 1

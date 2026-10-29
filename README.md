@@ -17,7 +17,8 @@ sowie den ehrlichen User-Agent ein.
 pip install git+https://github.com/smlfg/angebote-cli
 ```
 
-Voraussetzungen: Python >= 3.10, eine dependency (`httpx`). Kein Browser nötig.
+Voraussetzungen: Python >= 3.10, eine einzige Dependency (`httpx`). Kein
+Browser nötig.
 
 ```bash
 angebote --version
@@ -57,10 +58,12 @@ Optionen:
 
 Standardmäßig bleibt nur ein Treffer erhalten, wenn **jedes Wort** des
 Suchbegriffs – case-insensitive und mit normalisierten Umlauten (ä=ae usw.) –
-in `titel`, `beschreibung`, `marke` oder `kategorien` vorkommt. kaufDA mischt
-gelegentlich unpassende Angebote bei; diese werden verworfen. `--locker`
-schaltet den Filter ab. Die Anzahl der verworfenen Treffer steht im JSON unter
-`verworfen_irrelevant`.
+in `titel`, `beschreibung`, `marke` oder `kategorien` als eigenständiges Wort
+vorkommt. Reine Wortteile zählen nicht: „Vollkorn Toast“ mit der Kategorie
+„Buttertoast“ ist kein Butter-Treffer, „Butter“ oder „Irische Butter“ schon.
+kaufDA mischt gelegentlich unpassende Angebote bei; diese werden verworfen.
+`--locker` schaltet den Filter ab. Die Anzahl der verworfenen Treffer steht im
+JSON unter `verworfen_irrelevant`.
 
 ### `angebote prospekte <haendler>`
 

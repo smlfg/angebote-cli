@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -76,6 +77,26 @@ def test_suche_relevance_filters_unrelated(
             )
         )
         assert "butter" in haystack
+
+
+def test_suche_relevance_requires_own_word() -> None:
+    toast = SimpleNamespace(
+        titel="Vollkorn Toast",
+        beschreibung="versch. Sorten",
+        marke="Harry",
+        kategorien=["Harry", "Buttertoast", "Vollkorntoast"],
+    )
+    butter = SimpleNamespace(
+        titel="Butter",
+        beschreibung=None,
+        marke="Landliebe",
+        kategorien=["Butter"],
+    )
+
+    kept, dropped = cli._filter_relevant([toast, butter], "Butter")
+
+    assert kept == [butter]
+    assert dropped == 1
 
 
 def test_suche_locker_keeps_unrelated(
