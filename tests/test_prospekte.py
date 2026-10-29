@@ -49,6 +49,17 @@ def test_prospekte_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
         datetime.fromisoformat(brochure["gueltig_bis"])
 
 
+def test_prospekte_ort_uses_city_url(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake = install_client(monkeypatch, read_fixture("geschaeft_rewe.html"))
+    code = cli.main(["--ort", "Heilbronn", "prospekte", "REWE", "--json"])
+
+    assert code == 0
+    assert fake.urls == ["https://www.kaufda.de/Heilbronn/Geschaefte/REWE"]
+    capsys.readouterr()
+
+
 def test_prospekte_text(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     install_client(monkeypatch, read_fixture("geschaeft_rewe.html"))
     code = cli.main(["prospekte", "REWE"])

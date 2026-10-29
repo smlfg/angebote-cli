@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from typing import Any, Sequence
 
@@ -21,6 +22,7 @@ from .parser import (
     parse_search_api_offers,
     search_api_url,
     search_url,
+    slugify_city,
     slugify_keyword,
 )
 from .state import load_seen, save_seen, state_path
@@ -72,6 +74,29 @@ def _page_count(value: str) -> int:
     return number
 
 
+def _zip_code(value: str) -> str:
+    text = value.strip()
+    if not re.fullmatch(r"\d{5}", text):
+        raise argparse.ArgumentTypeError("--plz muss eine fünfstellige PLZ sein")
+    return text
+
+
+def _add_location_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--ort",
+        metavar="STADT",
+        default=argparse.SUPPRESS,
+        help="Ort über Stadtnamen setzen, z. B. Heilbronn (kaufDA-Stadt-URL)",
+    )
+    parser.add_argument(
+        "--plz",
+        type=_zip_code,
+        metavar="PLZ",
+        default=argparse.SUPPRESS,
+        help="Ort über fünfstellige PLZ setzen (Auflösung via zippopotam.us)",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = ArgumentParser(
         prog="angebote",
@@ -89,6 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="SEC",
         help="HTTP-Timeout in Sekunden (muss positiv sein)",
     )
+    _add_location_args(parser)
     subparsers = parser.add_subparsers(dest="command")
 
     suche = subparsers.add_parser(
@@ -96,6 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Angebote zu einem Begriff suchen",
         description="Sucht aktuelle Angebote zu einem Begriff bei kaufDA.",
     )
+    _add_location_args(suche)
     suche.add_argument("begriff", help="Suchbegriff, z. B. Butter")
     suche.add_argument(
         "--haendler",
@@ -152,6 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Aktuelle Prospekte eines Händlers anzeigen",
         description="Zeigt die aktuellen Prospekte eines Händlers bei kaufDA.",
     )
+    _add_location_args(prospekte)
     prospekte.add_argument("haendler", help="Händlername, z. B. REWE")
     prospekte.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     prospekte.add_argument(
@@ -170,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Detailseite, daher wird die Suchseite des Begriffs verwendet."
         ),
     )
+    _add_location_args(angebot)
     angebot.add_argument("offer_id", metavar="OFFER-ID", help="Angebots-ID")
     angebot.add_argument(
         "--begriff",
@@ -192,6 +221,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Speichert gesehene Angebots-IDs und meldet nur neue Treffer."
         ),
     )
+    _add_location_args(watch)
     watch.add_argument("begriff", help="Suchbegriff, z. B. Butter")
     watch.add_argument(
         "--haendler",
@@ -391,13 +421,57 @@ def _fetch_api_page(
     return parse_search_api_offers(payload, keyword)
 
 
+def _resolve_zip_city(plz: str, client: Any) -> str:
+    url = f"https://api.zippopotam.us/de/{plz}"
+    try:
+        text = client.get(url)
+    except NotFoundError as exc:
+        raise UsageError(f"Zur PLZ {plz} wurde kein Ort gefunden.") from exc
+    try:
+        payload = json.loads(text)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise UsageError(
+            f"Die PLZ {plz} konnte nicht aufgelöst werden. "
+            "Nutze stattdessen --ort."
+        ) from exc
+    places = payload.get("places") if isinstance(payload, dict) else None
+    if not isinstance(places, list) or not places:
+        raise UsageError(
+            f"Zur PLZ {plz} wurde kein Ort gefunden. "
+            "Nutze stattdessen --ort."
+        )
+    first = places[0]
+    city = first.get("place name") if isinstance(first, dict) else None
+    if not isinstance(city, str) or not city.strip():
+        raise UsageError(
+            f"Zur PLZ {plz} wurde kein Ortsname geliefert. "
+            "Nutze stattdessen --ort."
+        )
+    return city.strip()
+
+
+def _location_city_slug(
+    ort: str | None, plz: str | None, client: Any
+) -> str | None:
+    if ort:
+        return slugify_city(ort)
+    if plz:
+        return slugify_city(_resolve_zip_city(plz, client))
+    return None
+
+
 def _search_offers(
-    begriff: str, timeout: float | None = None, seiten: int = 3
+    begriff: str,
+    timeout: float | None = None,
+    seiten: int = 3,
+    ort: str | None = None,
+    plz: str | None = None,
 ) -> tuple[str, list[Offer], dict[str, Any]]:
     keyword = slugify_keyword(begriff)
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
     client = _make_client(timeout)
+    city_slug = _location_city_slug(ort, plz, client)
     offers: list[Offer] = []
     seen_ids: set[str] = set()
     location: dict[str, Any] = {}
@@ -409,7 +483,7 @@ def _search_offers(
             )
         else:
             try:
-                html = client.get(search_url(keyword, page=page))
+                html = client.get(search_url(keyword, city_slug, page=page))
             except NotFoundError:
                 if page == 1:
                     raise
@@ -417,7 +491,7 @@ def _search_offers(
             info = parse_page_information(html)
             if page == 1:
                 location = parse_location(info)
-            page_offers = parse_offers(info, keyword)
+            page_offers = parse_offers(info, keyword, city_slug)
             if page > 1 and page_offers:
                 new_ids = {
                     offer.id for offer in page_offers
@@ -452,6 +526,8 @@ def _run_suche(args: argparse.Namespace) -> int:
         args.begriff,
         getattr(args, "timeout", None),
         getattr(args, "seiten", 3),
+        getattr(args, "ort", None),
+        getattr(args, "plz", None),
     )
     verworfen_irrelevant = 0
     if not getattr(args, "locker", False):
@@ -485,7 +561,12 @@ def _run_suche(args: argparse.Namespace) -> int:
 
 def _run_prospekte(args: argparse.Namespace) -> int:
     client = _make_client(getattr(args, "timeout", None))
-    html = client.get(dealer_url(args.haendler))
+    city_slug = _location_city_slug(
+        getattr(args, "ort", None),
+        getattr(args, "plz", None),
+        client,
+    )
+    html = client.get(dealer_url(args.haendler, city_slug))
     info = parse_page_information(html)
     brochures = parse_brochures(info, args.haendler)
     if not brochures:
@@ -529,9 +610,14 @@ def _run_angebot(args: argparse.Namespace) -> int:
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
     client = _make_client(getattr(args, "timeout", None))
-    html = client.get(search_url(keyword))
+    city_slug = _location_city_slug(
+        getattr(args, "ort", None),
+        getattr(args, "plz", None),
+        client,
+    )
+    html = client.get(search_url(keyword, city_slug))
     info = parse_page_information(html)
-    offers = parse_offers(info, keyword)
+    offers = parse_offers(info, keyword, city_slug)
     offer = next((item for item in offers if item.id == args.offer_id), None)
     if offer is None:
         raise NotFoundError(
@@ -573,7 +659,10 @@ def _run_watch(args: argparse.Namespace) -> int:
     path = state_path()
     seen = load_seen(path)
     keyword, offers, location = _search_offers(
-        args.begriff, getattr(args, "timeout", None)
+        args.begriff,
+        getattr(args, "timeout", None),
+        ort=getattr(args, "ort", None),
+        plz=getattr(args, "plz", None),
     )
     verworfen_irrelevant = 0
     if not getattr(args, "locker", False):

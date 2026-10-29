@@ -141,6 +141,66 @@ def _page_with(html: str, transform) -> str:
     return f'<script id="__NEXT_DATA__">{json.dumps(data)}</script>'
 
 
+def _page_with_location(html: str, location: dict) -> str:
+    data = extract_next_data(html)
+    data["props"]["pageProps"]["pageInformation"]["location"] = location
+    return f'<script id="__NEXT_DATA__">{json.dumps(data)}</script>'
+
+
+HEILBRONN = {
+    "city": "Heilbronn, Neckar",
+    "cityDisplayName": "Heilbronn",
+    "countryCode": "DE",
+    "lat": 49.1416,
+    "lng": 9.22208,
+    "zip": "74072",
+}
+
+
+def test_suche_ort_uses_city_url(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    html = _page_with_location(read_fixture("angebote_butter.html"), HEILBRONN)
+    fake = install_client(monkeypatch, html)
+    data = run_json(
+        capsys,
+        ["--ort", "Heilbronn", "suche", "Butter", "--seiten", "1", "--json"],
+    )
+
+    assert fake.urls == ["https://www.kaufda.de/Heilbronn/Angebote/Butter"]
+    assert data["location"]["city"] == "Heilbronn, Neckar"
+    assert data["location"]["zip"] == "74072"
+
+
+def test_suche_plz_resolves_city(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    html = _page_with_location(read_fixture("angebote_butter.html"), HEILBRONN)
+    fake = install_client(monkeypatch, html)
+    monkeypatch.setattr(
+        cli, "_resolve_zip_city", lambda plz, client: "Heilbronn"
+    )
+    data = run_json(
+        capsys,
+        ["suche", "Butter", "--plz", "74072", "--seiten", "1", "--json"],
+    )
+
+    assert fake.urls == ["https://www.kaufda.de/Heilbronn/Angebote/Butter"]
+    assert data["location"]["zip"] == "74072"
+
+
+def test_suche_invalid_plz_is_usage_error(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fake = install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    code = cli.main(["suche", "Butter", "--plz", "7407", "--json"])
+    data = json.loads(capsys.readouterr().out)
+
+    assert code == 1
+    assert data["error"]["type"] == "usage"
+    assert fake.urls == []
+
+
 def test_suche_slug_url(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     fake = install_client(monkeypatch, read_fixture("angebote_butter.html"))
     run_json(capsys, ["suche", "Irische Butter", "--seiten", "1", "--json"])

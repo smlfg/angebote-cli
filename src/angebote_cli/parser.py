@@ -165,8 +165,11 @@ def search_url(
     return url
 
 
-def dealer_url(dealer_slug: str) -> str:
-    return f"{BASE_URL}/Geschaefte/{slugify_city(dealer_slug)}"
+def dealer_url(dealer_slug: str, city_slug: str | None = None) -> str:
+    dealer = slugify_city(dealer_slug)
+    if city_slug:
+        return f"{BASE_URL}/{slugify_city(city_slug)}/Geschaefte/{dealer}"
+    return f"{BASE_URL}/Geschaefte/{dealer}"
 
 
 def search_api_url(
