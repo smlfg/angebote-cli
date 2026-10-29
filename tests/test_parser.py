@@ -48,10 +48,15 @@ def test_offer_fields_and_location() -> None:
     assert isinstance(offer.seite, int)
     assert offer.url.startswith("https://www.kaufda.de/Angebote/")
 
+    assert offer.beschreibung
+    assert offer.kategorien
+
     data = offer.to_dict()
     for key in (
         "id",
         "titel",
+        "beschreibung",
+        "kategorien",
         "marke",
         "haendler",
         "preis",
@@ -64,6 +69,8 @@ def test_offer_fields_and_location() -> None:
         "url",
     ):
         assert key in data
+    assert data["beschreibung"] == offer.beschreibung
+    assert data["kategorien"] == offer.kategorien
 
     location = info["location"]
     assert location["city"] == "Stuttgart"

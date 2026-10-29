@@ -137,6 +137,20 @@ def _text(value: Any) -> str | None:
     return value or None
 
 
+def _categories(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for entry in value:
+        text = _text(entry)
+        if text is None or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
 def search_url(
     keyword_slug: str,
     city_slug: str | None = None,
@@ -187,6 +201,7 @@ class Offer:
     seite: int | None
     url: str
     beschreibung: str | None = None
+    kategorien: list[str] = field(default_factory=list)
     bild_url: str | None = None
     rabatt: float | None = None
     weitere_ids: list[str] = field(default_factory=list)
@@ -196,6 +211,8 @@ class Offer:
         result: dict[str, Any] = {
             "id": self.id,
             "titel": self.titel,
+            "beschreibung": self.beschreibung,
+            "kategorien": list(self.kategorien),
             "marke": self.marke,
             "haendler": self.haendler,
             "preis": self.preis,
@@ -210,7 +227,6 @@ class Offer:
             "anzahl_prospekte": self.anzahl_prospekte,
         }
         if detailed:
-            result["beschreibung"] = self.beschreibung
             result["bild_url"] = self.bild_url
         return result
 
@@ -300,6 +316,7 @@ def _offer_from_item(
         seite=page_number,
         url=f"{base}?offerId={offer_id}",
         beschreibung=_text(item.get("description")),
+        kategorien=_categories(item.get("categories")),
         bild_url=image_url,
         rabatt=discount,
     )

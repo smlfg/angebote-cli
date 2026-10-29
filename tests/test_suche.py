@@ -50,6 +50,8 @@ def test_suche_json(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     assert first["titel"]
     assert first["haendler"]
     assert first["preis_text"]
+    assert first["beschreibung"]
+    assert isinstance(first["kategorien"], list) and first["kategorien"]
 
 
 def test_suche_haendler_filter(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
