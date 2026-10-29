@@ -168,3 +168,88 @@ def test_suche_seiten_limit_is_validated(
 
     assert code == 1
     assert data["error"]["type"] == "usage"
+
+
+def test_suche_deduplicates_regional_offers(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    data = run_json(
+        capsys,
+        ["suche", "Butter", "--haendler", "rewe", "--seiten", "1", "--json"],
+    )
+
+    offers = data["angebote"]
+    keys = [
+        (
+            offer["titel"].casefold(),
+            (offer["marke"] or "").casefold(),
+            offer["haendler"].casefold(),
+            offer["preis"],
+            offer["gueltig_bis"],
+        )
+        for offer in offers
+    ]
+    assert len(keys) == len(set(keys))
+    merged = next(offer for offer in offers if offer["weitere_ids"])
+    assert merged["anzahl_prospekte"] == 2
+    assert len(merged["weitere_ids"]) == 1
+
+
+def test_suche_alle_keeps_regional_offers(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    data = run_json(
+        capsys,
+        [
+            "suche",
+            "Butter",
+            "--haendler",
+            "rewe",
+            "--seiten",
+            "1",
+            "--alle",
+            "--json",
+        ],
+    )
+
+    offers = data["angebote"]
+    assert len(offers) == 5
+    assert all(offer["weitere_ids"] == [] for offer in offers)
+    assert all(offer["anzahl_prospekte"] == 1 for offer in offers)
+
+
+def test_suche_not_found(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    empty = json.dumps(
+        {
+            "props": {
+                "pageProps": {
+                    "pageInformation": {
+                        "offers": {"main": {"items": []}},
+                        "location": {"city": "Stuttgart", "zip": "70174"},
+                    }
+                }
+            }
+        }
+    )
+    html = f'<script id="__NEXT_DATA__">{empty}</script>'
+    install_client(monkeypatch, html)
+
+    code = cli.main(["suche", "Gibteseinicht", "--json"])
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert code == 3
+    assert data["ok"] is False
+    assert data["error"]["type"] == "not_found"
+
+
+def test_suche_text_output(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+    install_client(monkeypatch, read_fixture("angebote_butter.html"))
+    code = cli.main(["suche", "Butter", "--limit", "2"])
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "Ort: Stuttgart (70174)" in captured.out
+    lines = [line for line in captured.out.splitlines() if line.strip()]
+    assert len(lines) == 3

@@ -126,6 +126,11 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Maximale Anzahl Ergebnisseiten (1-10, Standard 3)",
     )
+    suche.add_argument(
+        "--alle",
+        action="store_true",
+        help="Dubletten aus regionalen Prospekten nicht zusammenfassen",
+    )
     suche.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     suche.add_argument(
         "--timeout",
@@ -253,6 +258,28 @@ def _filter_offers(
     return result
 
 
+def _dedupe_offers(offers: list[Offer]) -> list[Offer]:
+    result: list[Offer] = []
+    seen: dict[tuple[Any, ...], Offer] = {}
+    for offer in offers:
+        key = (
+            offer.titel.casefold().strip(),
+            (offer.marke or "").casefold().strip(),
+            offer.haendler.casefold().strip(),
+            offer.preis,
+            offer.gueltig_bis,
+        )
+        first = seen.get(key)
+        if first is None:
+            seen[key] = offer
+            result.append(offer)
+            continue
+        if offer.id != first.id and offer.id not in first.weitere_ids:
+            first.weitere_ids.append(offer.id)
+            first.anzahl_prospekte += 1
+    return result
+
+
 def _format_valid_until(offer: Offer) -> str:
     if not offer.gueltig_bis:
         return "unbekannt"
@@ -331,8 +358,11 @@ def _run_suche(args: argparse.Namespace) -> int:
         max_preis=args.max_preis,
         marke=args.marke,
         sort=args.sort,
-        limit=args.limit,
     )
+    if not args.alle:
+        offers = _dedupe_offers(offers)
+    if args.limit is not None:
+        offers = offers[: args.limit]
     if args.json:
         payload = {
             "ok": True,

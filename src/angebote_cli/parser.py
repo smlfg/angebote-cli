@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Iterable
 
@@ -171,6 +171,8 @@ class Offer:
     beschreibung: str | None = None
     bild_url: str | None = None
     rabatt: float | None = None
+    weitere_ids: list[str] = field(default_factory=list)
+    anzahl_prospekte: int = 1
 
     def to_dict(self, detailed: bool = False) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -186,6 +188,8 @@ class Offer:
             "prospekt_id": self.prospekt_id,
             "seite": self.seite,
             "url": self.url,
+            "weitere_ids": list(self.weitere_ids),
+            "anzahl_prospekte": self.anzahl_prospekte,
         }
         if detailed:
             result["beschreibung"] = self.beschreibung
