@@ -13,6 +13,8 @@ from .client import KaufdaClient
 from .errors import AngeboteError, NotFoundError, UsageError
 from .parser import (
     Offer,
+    dealer_url,
+    parse_brochures,
     parse_location,
     parse_offers,
     parse_page_information,
@@ -96,6 +98,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximale Anzahl Treffer",
     )
     suche.add_argument("--json", action="store_true", help="JSON-Ausgabe")
+
+    prospekte = subparsers.add_parser(
+        "prospekte",
+        help="Aktuelle Prospekte eines Händlers anzeigen",
+        description="Zeigt die aktuellen Prospekte eines Händlers bei kaufDA.",
+    )
+    prospekte.add_argument("haendler", help="Händlername, z. B. REWE")
+    prospekte.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     return parser
 
 
@@ -209,6 +219,41 @@ def _run_suche(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_prospekte(args: argparse.Namespace) -> int:
+    client = KaufdaClient()
+    html = client.get(dealer_url(args.haendler))
+    info = parse_page_information(html)
+    brochures = parse_brochures(info, args.haendler)
+    if not brochures:
+        raise NotFoundError(
+            f"Keine aktuellen Prospekte für „{args.haendler}“ gefunden."
+        )
+    location = parse_location(info)
+    if args.json:
+        payload = {
+            "ok": True,
+            "haendler": args.haendler,
+            "location": location,
+            "anzahl": len(brochures),
+            "prospekte": [brochure.to_dict() for brochure in brochures],
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        city = location.get("city")
+        zip_code = location.get("zip")
+        if city:
+            suffix = f" ({zip_code})" if zip_code else ""
+            print(f"Ort: {city}{suffix}")
+        for brochure in brochures:
+            valid_from = (brochure.gueltig_von or "")[:10] or "?"
+            valid_until = (brochure.gueltig_bis or "")[:10] or "?"
+            print(
+                f"{brochure.titel}  {valid_from} bis {valid_until}  "
+                f"id {brochure.id}  {brochure.url}"
+            )
+    return 0
+
+
 def _emit_error(error: AngeboteError, json_mode: bool) -> int:
     if json_mode:
         payload = {
@@ -232,6 +277,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = parser.parse_args(arguments)
         if args.command == "suche":
             return _run_suche(args)
+        if args.command == "prospekte":
+            return _run_prospekte(args)
         parser.print_help()
         return 0
     except AngeboteError as error:
