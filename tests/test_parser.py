@@ -85,6 +85,30 @@ def test_brochures_rewe() -> None:
         datetime.fromisoformat(brochure.gueltig_bis)
 
 
+def test_offers_include_other_sections_and_dedupe_by_id() -> None:
+    info = parse_page_information(read_fixture("angebote_butter.html"))
+    main_items = info["offers"]["main"]["items"]
+    first = main_items[0]
+    duplicate = dict(first)
+    second = dict(main_items[1])
+    second["id"] = "other-publisher-only"
+    info["offers"]["otherPublishers"] = {
+        "items": [duplicate, second],
+        "totalItems": 2,
+    }
+    info["offers"]["topRanked"] = {
+        "items": [dict(main_items[2])],
+        "totalItems": 1,
+    }
+
+    offers = parse_offers(info)
+
+    ids = [offer.id for offer in offers]
+    assert len(ids) == len(set(ids))
+    assert "other-publisher-only" in ids
+    assert len(offers) == len(main_items) + 1
+
+
 def test_slugify_keyword() -> None:
     assert slugify_keyword("Irische Butter") == "Irische-Butter"
     assert slugify_keyword("Käse") == "Kaese"

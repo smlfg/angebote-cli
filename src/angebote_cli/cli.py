@@ -63,6 +63,13 @@ def _positive_int(value: str) -> int:
     return number
 
 
+def _page_count(value: str) -> int:
+    number = _positive_int(value)
+    if number > 10:
+        raise argparse.ArgumentTypeError("--seiten darf höchstens 10 sein")
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = ArgumentParser(
         prog="angebote",
@@ -111,6 +118,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=_positive_int,
         metavar="N",
         help="Maximale Anzahl Treffer",
+    )
+    suche.add_argument(
+        "--seiten",
+        type=_page_count,
+        default=3,
+        metavar="N",
+        help="Maximale Anzahl Ergebnisseiten (1-10, Standard 3)",
     )
     suche.add_argument("--json", action="store_true", help="JSON-Ausgabe")
     suche.add_argument(
@@ -270,26 +284,46 @@ def _make_client(timeout: float | None) -> KaufdaClient:
 
 
 def _search_offers(
-    begriff: str, timeout: float | None = None
+    begriff: str, timeout: float | None = None, seiten: int = 3
 ) -> tuple[str, list[Offer], dict[str, Any]]:
     keyword = slugify_keyword(begriff)
     if not keyword:
         raise UsageError("Der Suchbegriff darf nicht leer sein.")
     client = _make_client(timeout)
-    html = client.get(search_url(keyword))
-    info = parse_page_information(html)
-    offers = parse_offers(info, keyword)
+    offers: list[Offer] = []
+    seen_ids: set[str] = set()
+    location: dict[str, Any] = {}
+    for page in range(1, seiten + 1):
+        try:
+            html = client.get(search_url(keyword, page=page))
+        except NotFoundError:
+            if page == 1:
+                raise
+            break
+        info = parse_page_information(html)
+        if page == 1:
+            location = parse_location(info)
+        page_offers = parse_offers(info, keyword)
+        if not page_offers:
+            break
+        for offer in page_offers:
+            if offer.id in seen_ids:
+                continue
+            seen_ids.add(offer.id)
+            offers.append(offer)
     if not offers:
         raise NotFoundError(
             f"Keine Angebote für „{begriff}“ gefunden. "
             "Versuch es mit einem allgemeineren Begriff."
         )
-    return keyword, offers, parse_location(info)
+    return keyword, offers, location
 
 
 def _run_suche(args: argparse.Namespace) -> int:
     keyword, offers, location = _search_offers(
-        args.begriff, getattr(args, "timeout", None)
+        args.begriff,
+        getattr(args, "timeout", None),
+        getattr(args, "seiten", 3),
     )
     offers = _filter_offers(
         offers,

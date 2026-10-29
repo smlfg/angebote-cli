@@ -136,10 +136,18 @@ def _text(value: Any) -> str | None:
     return value or None
 
 
-def search_url(keyword_slug: str, city_slug: str | None = None) -> str:
+def search_url(
+    keyword_slug: str,
+    city_slug: str | None = None,
+    page: int | None = None,
+) -> str:
     if city_slug:
-        return f"{BASE_URL}/{slugify_city(city_slug)}/Angebote/{keyword_slug}"
-    return f"{BASE_URL}/Angebote/{keyword_slug}"
+        url = f"{BASE_URL}/{slugify_city(city_slug)}/Angebote/{keyword_slug}"
+    else:
+        url = f"{BASE_URL}/Angebote/{keyword_slug}"
+    if page is not None and page > 1:
+        url = f"{url}?page={page}"
+    return url
 
 
 def dealer_url(dealer_slug: str) -> str:
@@ -291,15 +299,27 @@ def parse_offers(
     main = offers.get("main")
     if not isinstance(main, dict):
         raise ParseError("offers.main fehlt in den Seitendaten.")
-    items = main.get("items")
-    if not isinstance(items, list):
+    main_items = main.get("items")
+    if not isinstance(main_items, list):
         raise ParseError("offers.main.items fehlt in den Seitendaten.")
+
     result: list[Offer] = []
-    for item in items:
-        if isinstance(item, dict):
+    seen_ids: set[str] = set()
+    for key in ("main", "otherPublishers", "topRanked"):
+        section = offers.get(key)
+        if not isinstance(section, dict):
+            continue
+        items = section.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
             offer = _offer_from_item(item, keyword_slug, city_slug)
-            if offer is not None:
-                result.append(offer)
+            if offer is None or offer.id in seen_ids:
+                continue
+            seen_ids.add(offer.id)
+            result.append(offer)
     return result
 
 

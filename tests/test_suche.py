@@ -5,6 +5,7 @@ import json
 import pytest
 
 from angebote_cli import cli
+from angebote_cli.parser import extract_next_data
 
 from conftest import read_fixture
 
@@ -96,43 +97,74 @@ def test_suche_limit(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     assert len(data["angebote"]) == 3
 
 
+def _page_with(html: str, transform) -> str:
+    data = extract_next_data(html)
+    transform(data["props"]["pageProps"]["pageInformation"]["offers"]["main"]["items"])
+    return f'<script id="__NEXT_DATA__">{json.dumps(data)}</script>'
+
+
 def test_suche_slug_url(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     fake = install_client(monkeypatch, read_fixture("angebote_butter.html"))
-    run_json(capsys, ["suche", "Irische Butter", "--json"])
+    run_json(capsys, ["suche", "Irische Butter", "--seiten", "1", "--json"])
 
     assert fake.urls == ["https://www.kaufda.de/Angebote/Irische-Butter"]
 
 
-def test_suche_not_found(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
-    empty = json.dumps(
-        {
-            "props": {
-                "pageProps": {
-                    "pageInformation": {
-                        "offers": {"main": {"items": []}},
-                        "location": {"city": "Stuttgart", "zip": "70174"},
-                    }
-                }
-            }
-        }
+def test_suche_pagination_finds_offer_on_later_page(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fixture = read_fixture("angebote_butter.html")
+
+    def make_page_two(items: list[dict]) -> None:
+        for index, item in enumerate(items):
+            item["id"] = f"page-2-{index}"
+            parent = item.get("parentContent")
+            if isinstance(parent, dict):
+                parent["id"] = f"prospekt-2-{index}"
+        items[0]["publisherName"] = "Lidl"
+        items[0]["title"] = "Lidl Kaffee"
+
+    page_two = _page_with(fixture, make_page_two)
+    empty = _page_with(
+        fixture,
+        lambda items: items.clear(),
     )
-    html = f'<script id="__NEXT_DATA__">{empty}</script>'
-    install_client(monkeypatch, html)
+    pages = {
+        "https://www.kaufda.de/Angebote/Kaffee": fixture,
+        "https://www.kaufda.de/Angebote/Kaffee?page=2": page_two,
+        "https://www.kaufda.de/Angebote/Kaffee?page=3": empty,
+    }
 
-    code = cli.main(["suche", "Gibteseinicht", "--json"])
-    captured = capsys.readouterr()
-    data = json.loads(captured.out)
-    assert code == 3
-    assert data["ok"] is False
-    assert data["error"]["type"] == "not_found"
+    class PagedClient:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        def get(self, url: str) -> str:
+            self.urls.append(url)
+            return pages[url]
+
+    fake = PagedClient()
+    monkeypatch.setattr(cli, "KaufdaClient", lambda *args, **kwargs: fake)
+    data = run_json(
+        capsys, ["suche", "Kaffee", "--haendler", "lidl", "--json"]
+    )
+
+    assert fake.urls == [
+        "https://www.kaufda.de/Angebote/Kaffee",
+        "https://www.kaufda.de/Angebote/Kaffee?page=2",
+        "https://www.kaufda.de/Angebote/Kaffee?page=3",
+    ]
+    assert data["anzahl"] == 1
+    assert data["angebote"][0]["haendler"] == "Lidl"
+    assert data["angebote"][0]["titel"] == "Lidl Kaffee"
 
 
-def test_suche_text_output(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+def test_suche_seiten_limit_is_validated(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
     install_client(monkeypatch, read_fixture("angebote_butter.html"))
-    code = cli.main(["suche", "Butter", "--limit", "2"])
+    code = cli.main(["suche", "Butter", "--seiten", "11", "--json"])
+    data = json.loads(capsys.readouterr().out)
 
-    captured = capsys.readouterr()
-    assert code == 0
-    assert "Ort: Stuttgart (70174)" in captured.out
-    lines = [line for line in captured.out.splitlines() if line.strip()]
-    assert len(lines) == 3
+    assert code == 1
+    assert data["error"]["type"] == "usage"
