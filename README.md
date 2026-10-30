@@ -6,7 +6,8 @@
 pipx install git+https://github.com/smlfg/angebote-cli  # empfohlen, landet im PATH
 # Alternative: pip install --user git+https://github.com/smlfg/angebote-cli
 angebote suche butter
-angebote prospekte REWE --ort Heilbronn
+angebote --ort Heilbronn suche milch
+angebote prospekte rewe
 angebote watch kaffee --max-preis 10 --haendler lidl
 ```
 
@@ -89,7 +90,8 @@ Zeigt die aktuellen Prospekte eines Händlers.
 ```bash
 angebote prospekte rewe
 angebote prospekte Lidl --json
-angebote prospekte REWE --ort Heilbronn
+angebote --ort Heilbronn suche milch
+angebote prospekte rewe
 ```
 
 ### `angebote angebot <offer-id>`
