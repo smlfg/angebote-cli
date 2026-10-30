@@ -89,8 +89,9 @@ angebote angebot <offer-id> --begriff kaffee --json
 
 Beobachtet neue Angebote. Gesehene Angebots-IDs werden in
 `$XDG_STATE_HOME/angebote-cli/watch.json` gespeichert (Fallback
-`~/.local/state/angebote-cli/watch.json`, Rechte `0600`). Der zweite Lauf ohne
-Änderungen liefert `changed=false` und Exit 0.
+`~/.local/state/angebote-cli/watch.json`, Rechte `0600`). Der Pfad lässt sich
+per `XDG_STATE_HOME` umlenken (z. B. `XDG_STATE_HOME=/tmp/state angebote watch
+butter`). Der zweite Lauf ohne Änderungen liefert `changed=false` und Exit 0.
 
 ```bash
 angebote watch butter

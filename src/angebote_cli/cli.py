@@ -223,6 +223,12 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Speichert gesehene Angebots-IDs und meldet nur neue Treffer."
         ),
+        epilog=(
+            "State-Datei: $XDG_STATE_HOME/angebote-cli/watch.json "
+            "(Default ~/.local/state/angebote-cli/watch.json, Rechte 0600). "
+            "Pfad per XDG_STATE_HOME umlenken, z. B. "
+            "XDG_STATE_HOME=/tmp/state angebote watch butter."
+        ),
     )
     _add_location_args(watch)
     watch.add_argument("begriff", help="Suchbegriff, z. B. Butter")
