@@ -1,5 +1,17 @@
 # angebote-cli
 
+## Schnellstart
+
+```bash
+pipx install git+https://github.com/smlfg/angebote-cli  # empfohlen, landet im PATH
+# Alternative: pip install --user git+https://github.com/smlfg/angebote-cli
+angebote suche butter
+angebote prospekte REWE --ort Heilbronn
+angebote watch kaffee --max-preis 10 --haendler lidl
+```
+
+Wenn der Befehl danach nicht gefunden wird: pipx nutzen oder das bin-Verzeichnis des venv in den PATH aufnehmen.
+
 `angebote` gibt Agenten und Menschen live Zugriff auf aktuelle Prospekt-Angebote
 deutscher Händler (REWE, Lidl, Aldi, Kaufland, Netto, EDEKA, dm, …). Die Daten
 kommen von [kaufDA.de](https://www.kaufda.de), dem Portal der Bonial
