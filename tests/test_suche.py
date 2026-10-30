@@ -321,6 +321,71 @@ def test_suche_pagination_falls_back_to_search_api(
     assert data["angebote"][0]["id"] == "api-lidl-kaffee"
 
 
+def test_suche_enriches_validity_from_brochure_api(
+    monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    fixture = read_fixture("angebote_butter.html")
+    data = extract_next_data(fixture)
+    api_offer = dict(
+        data["props"]["pageProps"]["pageInformation"]["offers"]["main"]["items"][0]
+    )
+    api_offer["id"] = "api-butter-plaetzchen"
+    api_offer["publisherName"] = "ALDI Nord"
+    api_offer["title"] = "Butter Plätzchen"
+    api_offer["brand"] = "Kathi"
+    api_offer["parentContent"] = {
+        "id": "brochure-butter-plaetzchen",
+        "type": "static_brochure",
+        "page": {"number": 2},
+    }
+    api_offer.pop("validFrom", None)
+    api_offer.pop("validUntil", None)
+    brochure = {
+        "content": {
+            "id": "brochure-butter-plaetzchen",
+            "validFrom": "2026-10-25T23:00:00.000+0000",
+            "validUntil": "2026-10-30T21:00:00.000+0000",
+        }
+    }
+
+    class FallbackClient:
+        def __init__(self) -> None:
+            self.urls: list[str] = []
+
+        def get(self, url: str) -> str:
+            self.urls.append(url)
+            if "/api/search?" in url:
+                offers = [api_offer] if "offset=20" in url else []
+                return json.dumps(
+                    {
+                        "searchResults": {
+                            "contents": {"brochures": [], "offers": offers}
+                        }
+                    }
+                )
+            if "/v1/brochures/brochure-butter-plaetzchen" in url:
+                return json.dumps(brochure)
+            return fixture
+
+    fake = FallbackClient()
+    monkeypatch.setattr(cli, "KaufdaClient", lambda *args, **kwargs: fake)
+    data = run_json(
+        capsys, ["suche", "Butter", "--haendler", "aldi", "--json"]
+    )
+
+    assert data["anzahl"] == 1
+    offer = data["angebote"][0]
+    assert offer["id"] == "api-butter-plaetzchen"
+    assert offer["gueltig_von"] == "2026-10-25T23:00:00+00:00"
+    assert offer["gueltig_bis"] == "2026-10-30T21:00:00+00:00"
+    brochure_urls = [
+        url for url in fake.urls if "/v1/brochures/" in url
+    ]
+    assert len(brochure_urls) == 1
+    assert "lat=48.7798" in brochure_urls[0]
+    assert "lng=9.1827" in brochure_urls[0]
+
+
 def test_suche_seiten_limit_is_validated(
     monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:

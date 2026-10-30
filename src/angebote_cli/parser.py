@@ -232,6 +232,33 @@ def search_api_url(
     return f"{BASE_URL}/api/search?{urlencode(params)}"
 
 
+def brochure_api_url(
+    prospekt_id: str,
+    lat: Any = None,
+    lng: Any = None,
+) -> str:
+    params = {
+        "lat": str(lat if lat is not None else 0),
+        "lng": str(lng if lng is not None else 0),
+    }
+    return (
+        "https://content-viewer-be.kaufda.de/v1/brochures/"
+        f"{prospekt_id}?{urlencode(params)}"
+    )
+
+
+def parse_brochure_validity(
+    payload: dict[str, Any],
+) -> tuple[str | None, str | None]:
+    content = payload.get("content")
+    if not isinstance(content, dict):
+        return None, None
+    return (
+        _iso_datetime(content.get("validFrom")),
+        _iso_datetime(content.get("validUntil")),
+    )
+
+
 @dataclass
 class Offer:
     id: str

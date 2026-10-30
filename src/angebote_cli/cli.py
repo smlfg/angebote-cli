@@ -14,8 +14,10 @@ from .client import KaufdaClient
 from .errors import AngeboteError, NotFoundError, UsageError
 from .parser import (
     Offer,
+    brochure_api_url,
     dealer_slug_candidates,
     dealer_url,
+    parse_brochure_validity,
     parse_brochures,
     parse_location,
     parse_offers,
@@ -427,6 +429,43 @@ def _fetch_api_page(
     return parse_search_api_offers(payload, keyword)
 
 
+def _enrich_validity(
+    client: Any,
+    offers: list[Offer],
+    location: dict[str, Any],
+) -> None:
+    cache: dict[str, tuple[str | None, str | None]] = {}
+    for offer in offers:
+        if offer.gueltig_von and offer.gueltig_bis:
+            continue
+        if not offer.prospekt_id:
+            continue
+        if offer.prospekt_id not in cache:
+            url = brochure_api_url(
+                offer.prospekt_id,
+                location.get("lat"),
+                location.get("lng"),
+            )
+            try:
+                text = client.get(url)
+            except AngeboteError:
+                cache[offer.prospekt_id] = (None, None)
+            else:
+                try:
+                    payload = json.loads(text)
+                except (TypeError, json.JSONDecodeError):
+                    payload = None
+                if isinstance(payload, dict):
+                    cache[offer.prospekt_id] = parse_brochure_validity(payload)
+                else:
+                    cache[offer.prospekt_id] = (None, None)
+        valid_from, valid_until = cache[offer.prospekt_id]
+        if not offer.gueltig_von and valid_from:
+            offer.gueltig_von = valid_from
+        if not offer.gueltig_bis and valid_until:
+            offer.gueltig_bis = valid_until
+
+
 def _resolve_zip_city(plz: str, client: Any) -> str:
     url = f"https://api.zippopotam.us/de/{plz}"
     try:
@@ -524,6 +563,7 @@ def _search_offers(
             f"Keine Angebote für „{begriff}“ gefunden. "
             "Versuch es mit einem allgemeineren Begriff."
         )
+    _enrich_validity(client, offers, location)
     return keyword, offers, location
 
 
@@ -646,6 +686,7 @@ def _run_angebot(args: argparse.Namespace) -> int:
             f"„{args.begriff}“ nicht gefunden."
         )
     location = parse_location(info)
+    _enrich_validity(client, offers, location)
     if args.json:
         payload = {
             "ok": True,
