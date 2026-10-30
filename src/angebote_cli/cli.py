@@ -14,6 +14,7 @@ from .client import KaufdaClient
 from .errors import AngeboteError, NotFoundError, UsageError
 from .parser import (
     Offer,
+    dealer_slug_candidates,
     dealer_url,
     parse_brochures,
     parse_location,
@@ -571,9 +572,24 @@ def _run_prospekte(args: argparse.Namespace) -> int:
         getattr(args, "plz", None),
         client,
     )
-    html = client.get(dealer_url(args.haendler, city_slug))
-    info = parse_page_information(html)
-    brochures = parse_brochures(info, args.haendler)
+    info: dict[str, Any] | None = None
+    brochures = []
+    last_error: NotFoundError | None = None
+    for dealer_slug in dealer_slug_candidates(args.haendler):
+        try:
+            html = client.get(dealer_url(dealer_slug, city_slug))
+        except NotFoundError as exc:
+            last_error = exc
+            continue
+        info = parse_page_information(html)
+        brochures = parse_brochures(info, dealer_slug)
+        break
+    if info is None:
+        if last_error is not None:
+            raise last_error
+        raise NotFoundError(
+            f"Keine aktuellen Prospekte für „{args.haendler}“ gefunden."
+        )
     if not brochures:
         raise NotFoundError(
             f"Keine aktuellen Prospekte für „{args.haendler}“ gefunden."

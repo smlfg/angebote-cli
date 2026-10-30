@@ -45,6 +45,49 @@ def slugify_city(value: str) -> str:
     return slugify_keyword(value)
 
 
+_DEALER_SLUGS = {
+    "rewe": "REWE",
+    "edeka": "Edeka",
+    "aldi": "Aldi-Nord",
+    "aldi-nord": "Aldi-Nord",
+    "aldi-sued": "Aldi-Sued",
+    "dm": "DM",
+    "dm-drogerie-markt": "DM",
+    "netto": "Netto-Marken-Discount",
+    "netto-marken-discount": "Netto-Marken-Discount",
+    "kaufland": "Kaufland",
+    "lidl": "Lidl",
+    "penny": "Penny-Markt",
+    "penny-markt": "Penny-Markt",
+    "norma": "Norma",
+}
+
+
+def _normalize_dealer(value: str) -> str:
+    text = " ".join(value.strip().split())
+    for umlaut, replacement in _UMLAUTS.items():
+        text = text.replace(umlaut, replacement)
+    text = re.sub(r"[\s_]+", "-", text)
+    text = re.sub(r"-+", "-", text).strip("-")
+    return text.casefold()
+
+
+def resolve_dealer_slug(value: str) -> str:
+    """Löst einen Händlernamen auf die bei kaufDA verwendete Schreibweise auf."""
+    return _DEALER_SLUGS.get(_normalize_dealer(value)) or slugify_city(value)
+
+
+def dealer_slug_candidates(value: str) -> list[str]:
+    """Liefert Schreibvarianten für die Händler-URL, kanonische zuerst."""
+    original = slugify_city(value)
+    candidates = [resolve_dealer_slug(value), original, original.upper()]
+    result: list[str] = []
+    for candidate in candidates:
+        if candidate and candidate not in result:
+            result.append(candidate)
+    return result
+
+
 def extract_next_data(html: str) -> dict[str, Any]:
     match = _NEXT_DATA_RE.search(html or "")
     if not match:
