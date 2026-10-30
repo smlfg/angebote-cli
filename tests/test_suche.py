@@ -99,6 +99,53 @@ def test_suche_relevance_requires_own_word() -> None:
     assert dropped == 1
 
 
+def test_suche_relevance_matches_compound_ending_and_keeps_unjudgeable() -> None:
+    krone = SimpleNamespace(
+        titel="Krönung",
+        beschreibung=None,
+        marke="Jacobs",
+        kategorien=[],
+    )
+    gold = SimpleNamespace(
+        titel="Gold",
+        beschreibung=None,
+        marke="Nescafé",
+        kategorien=[],
+    )
+    bohnenkaffee = SimpleNamespace(
+        titel="Bohnenkaffee",
+        beschreibung="gemahlen",
+        marke=None,
+        kategorien=[],
+    )
+    filterkaffee = SimpleNamespace(
+        titel="Filterkaffee",
+        beschreibung=None,
+        marke=None,
+        kategorien=[],
+    )
+    barista = SimpleNamespace(
+        titel="Barista-Kaffee",
+        beschreibung=None,
+        marke=None,
+        kategorien=[],
+    )
+    kaffeehaus = SimpleNamespace(
+        titel="Kaffeehaus",
+        beschreibung="gemahlen",
+        marke=None,
+        kategorien=[],
+    )
+
+    kept, dropped = cli._filter_relevant(
+        [krone, gold, bohnenkaffee, filterkaffee, barista, kaffeehaus],
+        "Kaffee",
+    )
+
+    assert kept == [krone, gold, bohnenkaffee, filterkaffee, barista]
+    assert dropped == 1
+
+
 def test_suche_locker_keeps_unrelated(
     monkeypatch: pytest.MonkeyPatch, capsys
 ) -> None:

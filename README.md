@@ -59,11 +59,16 @@ Optionen:
 Standardmäßig bleibt nur ein Treffer erhalten, wenn **jedes Wort** des
 Suchbegriffs – case-insensitive und mit normalisierten Umlauten (ä=ae usw.) –
 in `titel`, `beschreibung`, `marke` oder `kategorien` als eigenständiges Wort
-vorkommt. Reine Wortteile zählen nicht: „Vollkorn Toast“ mit der Kategorie
-„Buttertoast“ ist kein Butter-Treffer, „Butter“ oder „Irische Butter“ schon.
-kaufDA mischt gelegentlich unpassende Angebote bei; diese werden verworfen.
-`--locker` schaltet den Filter ab. Die Anzahl der verworfenen Treffer steht im
-JSON unter `verworfen_irrelevant`.
+oder als Wortende eines Kompositums vorkommt. Ein Wortanfang zählt nicht:
+„Vollkorn Toast“ mit der Kategorie „Buttertoast“ ist kein Butter-Treffer,
+„Butter“, „Irische Butter“ oder „Bohnenkaffee“ bei „Kaffee“ schon. Auch
+Bindestrich-Komposita wie „Barista-Kaffee“ zählen. Treffer ohne
+`beschreibung` und ohne `kategorien`, deren Titel oder Marke das Wort nicht
+enthalten, werden nicht verworfen: Sie sind nicht beurteilbar, wurden aber von
+kaufDA dem Keyword zugeordnet (z. B. „Krönung“ von Jacobs). kaufDA mischt
+gelegentlich unpassende Angebote bei; diese werden verworfen. `--locker`
+schaltet den Filter ab. Die Anzahl der verworfenen Treffer steht im JSON unter
+`verworfen_irrelevant`.
 
 ### `angebote prospekte <haendler>`
 

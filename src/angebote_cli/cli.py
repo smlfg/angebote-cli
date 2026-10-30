@@ -274,9 +274,14 @@ def _normalize_text(value: str) -> str:
     return value.casefold().translate(_UMLAUTS)
 
 
+_WORD_TOKEN_RE = re.compile(r"[0-9a-z]+(?:-[0-9a-z]+)*")
+
+
 def _contains_word(haystack: str, word: str) -> bool:
-    pattern = rf"(?<![0-9a-z]){re.escape(word)}(?![0-9a-z])"
-    return re.search(pattern, haystack) is not None
+    """Trifft eigenständige Wörter und Wortenden von Komposita."""
+    return any(
+        token.endswith(word) for token in _WORD_TOKEN_RE.findall(haystack)
+    )
 
 
 def _filter_relevant(
@@ -303,6 +308,8 @@ def _filter_relevant(
             )
         )
         if all(_contains_word(haystack, word) for word in words):
+            kept.append(offer)
+        elif not offer.beschreibung and not offer.kategorien:
             kept.append(offer)
         else:
             dropped += 1
